@@ -22,7 +22,7 @@ WebSocketsServer wsServer(WS_SERVER_PORT);
 WebSocketsClient webSocket;
 WiFiServer meetServer(8081);
 WiFiClient meetClient;
-
+extern WiFiClient tcpMicClient;
 
 bool ws_connected = false;
 bool tcp_meeting = false;
@@ -303,21 +303,27 @@ void huiyi_loop() {
     }
   }
 
-  if (recording && ws_connected && start_sent) {
+  // 按需读 I2S: 会议录音 或 语音对话TCP连接时
+  bool needMic = (recording && ws_connected && start_sent)
+              || (tcpMicClient && tcpMicClient.connected());
+  if (needMic) {
     size_t bytes_read = 0;
     esp_err_t err = i2s_read(I2S_PORT, (void*)sub_frame, SUB_FRAME_SIZE, &bytes_read, portMAX_DELAY);
 
     if (err == ESP_OK && bytes_read > 0) {
-      int sample_count = bytes_read / sizeof(int16_t);
-      process_audio_realtime(sub_frame, sample_count);
-
-      memcpy(send_buffer + send_buf_ptr, sub_frame, bytes_read);
-      send_buf_ptr += bytes_read;
-
-      if (send_buf_ptr >= CHUNK_SIZE) {
-        webSocket.sendBIN(send_buffer, CHUNK_SIZE);
-        frames_sent++;
-        send_buf_ptr = 0;
+      if(tcpMicClient&&tcpMicClient.connected()){
+        tcpMicClient.write((uint8_t*)sub_frame,bytes_read);
+      }
+      if (recording && ws_connected && start_sent) {
+        int sample_count = bytes_read / sizeof(int16_t);
+        process_audio_realtime(sub_frame, sample_count);
+        memcpy(send_buffer + send_buf_ptr, sub_frame, bytes_read);
+        send_buf_ptr += bytes_read;
+        if (send_buf_ptr >= CHUNK_SIZE) {
+          webSocket.sendBIN(send_buffer, CHUNK_SIZE);
+          frames_sent++;
+          send_buf_ptr = 0;
+        }
       }
     }
   }

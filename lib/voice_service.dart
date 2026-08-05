@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
-import 'package:web_socket_channel/web_socket_channel.dart';
+// import 'package:web_socket_channel/web_socket_channel.dart';
 import 'ai_config.dart';
 
 /// VoiceService — 实时语音对话
@@ -14,7 +14,7 @@ class VoiceService {
 
   Socket? _micSocket;       // TCP :8082 接收 ESP32 麦克风 PCM
   Socket? _speakerSocket;   // TCP :8083 发送 AI TTS → 骨传导喇叭
-  WebSocketChannel? _qwenWs;
+  WebSocket? _qwenWs;
 
   // 事件回调
   void Function(String text)? onText;
@@ -36,13 +36,13 @@ class VoiceService {
       // DashScope Realtime WS 端点, model 通过 query string 传递
       final token = AiConfig.qwenRealtimeKey;
       final uri = Uri.parse('${AiConfig.qwenRealtimeUrl}?model=${AiConfig.qwenModel}');
-      _qwenWs = WebSocketChannel.connect(uri, headers: {
+      _qwenWs = await WebSocket.connect(uri.toString(), headers: {
         'Authorization': 'Bearer $token',
       });
-      await _qwenWs!.ready;
+
 
       // 发送 session update (与 bridge_stream.py 保持一致)
-      _qwenWs!.sink.add(jsonEncode({
+      _qwenWs!.add(jsonEncode({
         'event_id': 'evt_001',
         'type': 'session.update',
         'session': {
@@ -60,7 +60,7 @@ class VoiceService {
           'temperature': 0.7,
         }
       }));
-      await Future.delayed(const Duration(milliseconds: 300));
+    await Future.delayed(const Duration(milliseconds: 300));
 
       // 开始录音
       _recording = true;
@@ -89,7 +89,7 @@ class VoiceService {
         if (!_recording) break;
         if (_qwenWs != null && _recording) {
           // 发 PCM 给 Qwen (base64)
-          _qwenWs!.sink.add(jsonEncode({
+          _qwenWs!.add(jsonEncode({
             'type': 'input_audio_buffer.append',
             'audio': base64Encode(data),
           }));
@@ -101,7 +101,7 @@ class VoiceService {
 
   /// 监听 Qwen WS 返回 (文本 + TTS)
   void _listenQwen() {
-    _qwenWs?.stream.listen(
+    _qwenWs?.listen(
       (data) {
         try {
           final msg = jsonDecode(data as String);
@@ -109,7 +109,7 @@ class VoiceService {
 
           // 服务端心跳: ping → 立即回 pong
           if (type == 'heartbeat.ping') {
-            _qwenWs?.sink.add(jsonEncode({'type': 'heartbeat.pong'}));
+            _qwenWs?.add(jsonEncode({'type': 'heartbeat.pong'}));
             return;
           }
 
@@ -143,14 +143,6 @@ class VoiceService {
             _playing = false;
             _recording = false;
             onState?.call('idle');
-            // 重新开始新一轮录音
-            _qwenWs!.sink.add(jsonEncode({'type': 'input_audio_buffer.clear'}));
-            Future.delayed(const Duration(milliseconds: 100), () {
-              if (!_recording) {
-                _recording = true;
-                onState?.call('listening');
-              }
-            });
           } else if (type == 'error') {
             onState?.call('error: ${msg['error']?['message'] ?? 'unknown'}');
           }
@@ -170,8 +162,8 @@ class VoiceService {
   Future<void> commitAndRespond() async {
     if (_qwenWs == null || !_recording) return;
     _recording = false;
-    _qwenWs!.sink.add(jsonEncode({'type': 'input_audio_buffer.commit'}));
-    _qwenWs!.sink.add(jsonEncode({'type': 'response.create'}));
+    _qwenWs!.add(jsonEncode({'type': 'input_audio_buffer.commit'}));
+    _qwenWs!.add(jsonEncode({'type': 'response.create'}));
     onState?.call('thinking');
   }
 
@@ -180,7 +172,7 @@ class VoiceService {
     _playing = false;
     try { _micSocket?.destroy(); } catch (_) {}
     try { _speakerSocket?.destroy(); } catch (_) {}
-    try { _qwenWs?.sink.close(); } catch (_) {}
+    try { _qwenWs?.close(); } catch (_) {}
     _micSocket = null;
     _speakerSocket = null;
     _qwenWs = null;

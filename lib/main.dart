@@ -127,6 +127,7 @@ class _DemoPageState extends State<DemoPage> {
   final MapController _mapCtrl = MapController();
   bool _showMap = true;
   bool _satTile = false;
+  bool _modeVoice = true;  // true=对话, false=会议
 
   @override
   void initState() {
@@ -311,6 +312,13 @@ class _DemoPageState extends State<DemoPage> {
 
                 const SizedBox(height: 4),
 
+                // ---- 模式切换 ----
+                Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                  _modeSwitch('对话', Icons.chat, _modeVoice, () => setState(() => _modeVoice = true)),
+                  const SizedBox(width: 8),
+                  _modeSwitch('会议', Icons.mic_external_on, !_modeVoice, () => setState(() => _modeVoice = false)),
+                ]),
+
                 // ---- 操作按钮行 ----
                 Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
                   _Btn(icon: Icons.save_alt, label: '保存',
@@ -335,10 +343,11 @@ class _DemoPageState extends State<DemoPage> {
                   _Btn(icon: Icons.route, label: 'GPX',
                       color: _ble.trail.length >= 2 ? Colors.teal : Colors.grey,
                       onTap: _ble.trail.length >= 2 ? _exportGpx : null),
-                  _Btn(icon: Icons.mic_external_on, label: '会议',
-                      color: Colors.purple,
-                      onTap: () => Navigator.of(context).push(
-                          MaterialPageRoute(builder: (_) => MeetingPage(espIp: _ble.espIp ?? '')))),
+                  if (!_modeVoice)
+                    _Btn(icon: Icons.mic_external_on, label: '会议',
+                        color: Colors.purple,
+                        onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(builder: (_) => MeetingPage(espIp: _ble.espIp ?? '')))),
                 ]),
 
                 const SizedBox(height: 4),
@@ -372,8 +381,8 @@ class _DemoPageState extends State<DemoPage> {
 
                 const SizedBox(height: 4),
 
-                // ---- 语音/对话 按钮 ----
-                SizedBox(
+                // ---- 语音/对话 按钮 (仅对话模式) ----
+                if (_modeVoice) SizedBox(
                   width: double.infinity,
                   height: 36,
                   child: GestureDetector(
@@ -412,7 +421,7 @@ class _DemoPageState extends State<DemoPage> {
                   ),
                 ),
                 // 语音状态提示
-                if (_voiceText.isNotEmpty)
+                if (_modeVoice && _voiceText.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(top: 4),
                     child: Text(
@@ -759,6 +768,30 @@ class _DemoPageState extends State<DemoPage> {
       _voiceActive = false;
     }
   }
+}
+
+// ============================================================
+// 模式切换按钮
+// ============================================================
+Widget _modeSwitch(String label, IconData icon, bool active, VoidCallback onTap) {
+  return GestureDetector(
+    onTap: onTap,
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+      decoration: BoxDecoration(
+        color: active ? Colors.teal.shade700 : Colors.grey.shade800,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: active ? Colors.teal : Colors.grey.shade600),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(icon, size: 14, color: active ? Colors.white : Colors.grey),
+        const SizedBox(width: 5),
+        Text(label, style: TextStyle(fontSize: 12,
+            color: active ? Colors.white : Colors.grey,
+            fontWeight: active ? FontWeight.bold : FontWeight.normal)),
+      ]),
+    ),
+  );
 }
 
 // ============================================================
