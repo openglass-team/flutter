@@ -17,48 +17,33 @@ void gps_init() {
   pinMode(GPS_RX, INPUT);
   digitalWrite(GPS_RX, LOW);
   pinMode(GPS_TX, OUTPUT);
-  Serial.printf("[GPS] RX=%d TX=%d baud=%d\n", GPS_RX, GPS_TX, GPS_BAUD_RATE);
 }
 
 void gps_send_if_due(unsigned long now, bool connected) {
   int count = 0;
   while (Serial2.available() && count < 50) {
     char c = Serial2.read();
-    //Serial.write(c); GPS echo off
     gps.encode(c);
     count++;
   }
 
-  if (now - lastGpsUpdate < 1000) return;
-
-  if (gps.location.isValid()) {
-    Serial.printf("[GPS] fix=1 sats=%d lat=%.6f lng=%.6f\n",
-      gps.satellites.value(), gps.location.lat(), gps.location.lng());
-  }
-
+  unsigned long sinceLast = now - lastGpsUpdate;
+  if (sinceLast < 5000) return;
   if (!connected) { lastGpsUpdate = now; return; }
 
-  uint8_t buf[22] = {0};
-  buf[0] = gps_frame_count & 0xFF;
-  buf[1] = (gps_frame_count >> 8) & 0xFF;
+  uint8_t gpsBuffer[16];
+  gpsBuffer[0] = gps_frame_count & 0xFF;
+  gpsBuffer[1] = (gps_frame_count >> 8) & 0xFF;
 
   if (gps.location.isValid()) {
-    buf[2] = 1;
-    buf[3] = gps.satellites.value();
-    float lat = gps.location.lat();
-    float lng = gps.location.lng();
-    float alt = gps.altitude.meters();
-    float spd = gps.speed.mps();
-    uint16_t course = (uint16_t)(gps.course.deg() * 100);
-    memcpy(&buf[4], &lat, 4);
-    memcpy(&buf[8], &lng, 4);
-    memcpy(&buf[12], &alt, 4);
-    memcpy(&buf[16], &spd, 4);
-    buf[20] = course & 0xFF;
-    buf[21] = (course >> 8) & 0xFF;
+    gpsBuffer[2] = 1; gpsBuffer[3] = gps.satellites.value();
+    double lat=gps.location.lat(), lng=gps.location.lng(), spd=gps.speed.mps();
+    memcpy(&gpsBuffer[4],&lat,4); memcpy(&gpsBuffer[8],&lng,4); memcpy(&gpsBuffer[12],&spd,4);
+  } else {
+    gpsBuffer[2] = 0; memset(&gpsBuffer[3], 0, 13);
   }
 
-  gpsDataCharacteristic->setValue(buf, sizeof(buf));
+  gpsDataCharacteristic->setValue(gpsBuffer, sizeof(gpsBuffer));
   gpsDataCharacteristic->notify();
   gps_frame_count++;
   lastGpsUpdate = now;

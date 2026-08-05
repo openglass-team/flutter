@@ -1,7 +1,8 @@
 // ============================================================
-// OpenGlass - WiFi 照片 + BLE GPS 双模固件
+// OpenGlass - WiFi 照片 + BLE GPS + 会议语音识别 三模固件
 // 照片: WiFi TCP port 8080 (5 FPS, SVGA 800x600)
-// GPS:  BLE UUID 19B10003 (1Hz)
+// GPS:  BLE UUID 19B10003 + OneNET MQTT
+// 会议: 百度实时语音识别 + WS Server:81 广播
 // ============================================================
 #define CAMERA_MODEL_XIAO_ESP32S3
 #include <WiFi.h>
@@ -11,6 +12,8 @@
 #include <BLEDevice.h>
 #include <BLEUtils.h>
 #include "gps_handler.h"
+#include "onenet_handler.h"
+#include "huiyi_handler.h"
 
 // ====== WiFi 配置 (改成你的路由器) ======
 const char* WIFI_SSID = "sion";
@@ -29,7 +32,8 @@ WiFiClient tcpClient;
 
 static BLEUUID serviceUUID("19B10000-E8F2-537E-4F6C-D104768A1214");
 static BLEUUID gpsDataUUID("19B10003-E8F2-537E-4F6C-D104768A1214");
-
+static BLEUUID ipUUID("19B10004-E8F2-537E-4F6C-D104768A1214");
+BLECharacteristic *ipCharacteristic;
 BLECharacteristic *gpsDataCharacteristic;
 BLECharacteristic *batteryLevelCharacteristic;
 bool bleConnected = false;
@@ -38,7 +42,8 @@ unsigned long lastBatteryUpdate = 0;
 
 // ====== BLE Callbacks ======
 class ServerHandler : public BLEServerCallbacks {
-  void onConnect(BLEServer *s)    { bleConnected = true; Serial.println("BLE OK"); }
+  void onConnect(BLEServer *s)    { bleConnected = true; Serial.println("BLE OK");    if(WiFi.status()==WL_CONNECTED){String ip=WiFi.localIP().toString();ipCharacteristic->setValue(ip.c_str());ipCharacteristic->notify();}
+ }
   void onDisconnect(BLEServer *s) { bleConnected = false; BLEDevice::startAdvertising(); }
 };
 
@@ -54,6 +59,9 @@ void configure_ble() {
   BLE2902 *ccc = new BLE2902();
   ccc->setNotifications(true);
   gpsDataCharacteristic->addDescriptor(ccc);
+    ipCharacteristic = service->createCharacteristic(
+    ipUUID, BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY);
+  { BLE2902 *c = new BLE2902(); c->setNotifications(true); ipCharacteristic->addDescriptor(c); }
 
   BLEService *deviceInfoService = server->createService(DEVICE_INFORMATION_SERVICE_UUID);
   BLECharacteristic *c1 = deviceInfoService->createCharacteristic(MANUFACTURER_NAME_STRING_CHAR_UUID, BLECharacteristic::PROPERTY_READ);
@@ -92,8 +100,8 @@ void configure_camera() {
   config.pin_pclk = PCLK_GPIO_NUM;
   config.pin_vsync = VSYNC_GPIO_NUM;
   config.pin_href = HREF_GPIO_NUM;
-  config.pin_sscb_sda = SIOD_GPIO_NUM;
-  config.pin_sscb_scl = SIOC_GPIO_NUM;
+  config.pin_sccb_sda = SIOD_GPIO_NUM;
+  config.pin_sccb_scl = SIOC_GPIO_NUM;
   config.pin_pwdn = PWDN_GPIO_NUM;
   config.pin_reset = RESET_GPIO_NUM;
   config.xclk_freq_hz = 20000000;
@@ -105,7 +113,13 @@ void configure_camera() {
   config.fb_location = CAMERA_FB_IN_PSRAM;
 
   esp_err_t err = esp_camera_init(&config);
-  if (err != ESP_OK) { Serial.printf("Camera fail: 0x%x\n", err); while(1) delay(1000); }
+  if (err != ESP_OK) {
+    Serial.printf("Camera fail: 0x%x\n", err);
+    Serial.printf("  SIOD=%d SIOC=%d PWDN=%d RESET=%d XCLK=%d\n",
+      config.pin_sccb_sda, config.pin_sccb_scl, config.pin_pwdn, config.pin_reset, config.pin_xclk);
+    Serial.println("  Check: 1)ribbon cable  2)board model  3)PSRAM enabled");
+    while(1) delay(1000);
+  }
   Serial.println("Camera OK");
 }
 
@@ -132,10 +146,7 @@ void setup() {
   Serial.println("\nOpenGlass WiFi+GPS starting...");
 
   configure_camera();
-  gps_init();
-  configure_ble();
 
-  WiFi.config(IPAddress(192,168,137,200), IPAddress(192,168,137,1), IPAddress(255,255,255,0));
   WiFi.begin(WIFI_SSID, WIFI_PASS);
   Serial.print("WiFi connecting");
   for (int i = 0; i < 30 && WiFi.status() != WL_CONNECTED; i++) {
@@ -148,6 +159,11 @@ void setup() {
   } else {
     Serial.println("\nWiFi FAILED!");
   }
+
+  gps_init();
+  configure_ble();
+  huiyi_init();
+
   Serial.println("Ready");
 }
 
@@ -156,6 +172,8 @@ void loop() {
   unsigned long now = millis();
 
   gps_send_if_due(now, bleConnected);
+  onenet_loop();
+  huiyi_loop();
   send_photo_tcp();
 
   if (now - lastBatteryUpdate > 60000) {
