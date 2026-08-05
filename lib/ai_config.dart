@@ -5,9 +5,10 @@ class AiConfig {
   static const String zhipuModel = 'glm-4v-flash';
 
   // 通义千问 Realtime — STT 语音转写 (WebSocket)
+  // SDK 默认 endpoint: wss://dashscope.aliyuncs.com/api-ws/v1/realtime
   static const String qwenRealtimeUrl = 'wss://dashscope.aliyuncs.com/api-ws/v1/realtime';
-  static const String qwenRealtimeKey = 'YOUR_QWEN_WS_KEY';
-  static const String qwenModel = 'qwen3.5-omni-plus-realtime';
+  static const String qwenRealtimeKey = 'sk-ws-H.EIYRXRL.XGza.MEUCIQD5km_OeTxBhTgpHewEjtGOumvWfzjwkiQSjTZMeVoRugIgc2DVbbVxQ0MQWyh9QLVh8DMghV1lJDFfrYs0PUO7Gbw';
+  static const String qwenModel = 'qwen3-omni-flash-realtime';
 
   // 通义千问 Chat — 会议摘要 (OpenAI 兼容)
   static const String qwenChatUrl = 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions';

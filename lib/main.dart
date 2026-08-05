@@ -14,6 +14,7 @@ import 'package:gal/gal.dart';
 import 'package:path_provider/path_provider.dart';
 import 'ai_config.dart';
 import 'meeting_page.dart';
+import 'voice_service.dart';
 
 // ============================================================
 // SmartGlass — AI 智能眼镜 App
@@ -120,6 +121,9 @@ class _DemoPageState extends State<DemoPage> {
   final PhotoService _photo = PhotoService();
   final BleGpsService _ble = BleGpsService();
   final QuickAskService _ai = QuickAskService();
+  VoiceService? _voice;
+  String _voiceState = 'idle';
+  String _voiceText = '';
   final MapController _mapCtrl = MapController();
   bool _showMap = true;
   bool _satTile = false;
@@ -372,17 +376,52 @@ class _DemoPageState extends State<DemoPage> {
                 SizedBox(
                   width: double.infinity,
                   height: 36,
-                  child: OutlinedButton.icon(
-                    onPressed: () => _voiceAsk(),
-                    icon: const Icon(Icons.mic, size: 18, color: Colors.redAccent),
-                    label: const Text('按住说话', style: TextStyle(color: Colors.white70, fontSize: 13)),
-                    style: OutlinedButton.styleFrom(
-                      backgroundColor: Colors.grey.shade800,
-                      side: BorderSide(color: Colors.redAccent.withValues(alpha: 0.5)),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                  child: GestureDetector(
+                    onLongPressStart: (_) => _voiceAsk(),
+                    onLongPressEnd: (_) => _voice?.commitAndRespond(),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: _voiceActive ? Colors.red.shade800 : Colors.grey.shade800,
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(
+                          color: _voiceActive ? Colors.redAccent : Colors.redAccent.withValues(alpha: 0.5),
+                        ),
+                      ),
+                      alignment: Alignment.center,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            _voiceActive ? Icons.mic : Icons.mic_none,
+                            size: 18,
+                            color: _voiceActive ? Colors.white : Colors.redAccent,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            _voiceActive
+                                ? (_voiceState == 'speaking' ? 'AI 回复中...' : '松开发送')
+                                : '按住说话',
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
+                // 语音状态提示
+                if (_voiceText.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      _voiceText,
+                      style: const TextStyle(color: Colors.white54, fontSize: 11),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
               ]);
             },
           ),
@@ -679,9 +718,46 @@ class _DemoPageState extends State<DemoPage> {
     );
   }
 
-  // ---- 语音对话（当前用文字输入，预留音频接口） ----
-  void _voiceAsk() {
-    _freeAsk();
+  // ---- 语音对话 (ESP32 麦克风 → Qwen Realtime → 骨传导喇叭) ----
+  bool _voiceActive = false;
+
+  Future<void> _voiceAsk() async {
+    final ip = _ble.espIp;
+    if (ip == null || ip.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('请先通过 BLE 连接 OpenGlass')),
+        );
+      }
+      return;
+    }
+
+    if (_voiceActive) {
+      // 松开 → 提交音频触发回复
+      _voice?.commitAndRespond();
+      setState(() => _voiceActive = false);
+      return;
+    }
+
+    // 按下 → 开始语音对话
+    _voiceActive = true;
+    setState(() { _voiceState = 'connecting'; _voiceText = ''; });
+
+    _voice = VoiceService(espIp: ip);
+    _voice!.onText = (text) {
+      setState(() => _voiceText = text);
+    };
+    _voice!.onState = (state) {
+      setState(() => _voiceState = state);
+    };
+
+    final ok = await _voice!.start();
+    if (!ok && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('语音连接失败: $_voiceState')),
+      );
+      _voiceActive = false;
+    }
   }
 }
 
