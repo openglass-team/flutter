@@ -5,9 +5,6 @@
 #include <ArduinoJson.h>
 #include "driver/i2s.h"
 
-// 音频推入环形缓冲区 (由 firmware.ino 定义, 供 BAW 数据推送)
-extern void audio_push(const uint8_t *data, size_t len);
-
 const int ledPin = 21;
 const char* baidu_app_id = "124044995";
 const char* baidu_app_key = "H2hQT1BVZGewVCLUHTS4I1Rb";
@@ -312,13 +309,6 @@ void huiyi_loop() {
 
     if (err == ESP_OK && bytes_read > 0) {
       int sample_count = bytes_read / sizeof(int16_t);
-
-      // 原始 PCM → TCP :8082 (手机 App 收到后发 Qwen Realtime)
-      extern WiFiClient tcpMicClient;
-      if (tcpMicClient && tcpMicClient.connected()) {
-        tcpMicClient.write((uint8_t*)sub_frame, bytes_read);
-      }
-
       process_audio_realtime(sub_frame, sample_count);
 
       memcpy(send_buffer + send_buf_ptr, sub_frame, bytes_read);
