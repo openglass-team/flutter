@@ -13,6 +13,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:gal/gal.dart';
 import 'package:path_provider/path_provider.dart';
 import 'ai_config.dart';
+import 'meeting_page.dart';
 
 // ============================================================
 // SmartGlass — AI 智能眼镜 App
@@ -330,6 +331,10 @@ class _DemoPageState extends State<DemoPage> {
                   _Btn(icon: Icons.route, label: 'GPX',
                       color: _ble.trail.length >= 2 ? Colors.teal : Colors.grey,
                       onTap: _ble.trail.length >= 2 ? _exportGpx : null),
+                  _Btn(icon: Icons.mic_external_on, label: '会议',
+                      color: Colors.purple,
+                      onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute(builder: (_) => MeetingPage(espIp: _ble.espIp ?? '')))),
                 ]),
 
                 const SizedBox(height: 4),
